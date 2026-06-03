@@ -1,0 +1,17 @@
+# Python environments / caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Generated from Avid's PTSL.proto (SDK-licensed) — do NOT commit; build locally via generate_stubs.py
+PTSL_pb2.py
+PTSL_pb2_grpc.py
+
+# Bring your own (from the Avid PTSL SDK); don't redistribute
+PTSL.proto
+
+# logs / OS cruft
+*.log
+.DS_Store
+Thumbs.db

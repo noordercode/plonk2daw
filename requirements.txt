@@ -1,0 +1,4 @@
+# plonk2daw dependencies
+grpcio          # gRPC client used to talk to Pro Tools PTSL  (tested: 1.81.0)
+protobuf        # protobuf runtime                            (tested: 6.33.x)
+grpcio-tools    # only needed by generate_stubs.py to build the PTSL stubs
