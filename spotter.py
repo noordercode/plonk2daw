@@ -47,11 +47,12 @@ TERMINAL = {_v(TS, n) for n in ("TStatus_Completed", "TStatus_Failed",
 COMPLETED = _v(TS, "TStatus_Completed")
 
 def stem_to_track_format(stem_name):
-    """'SFormat_1stOrderAmbisonics' -> 'TFormat_1stOrderAmbisonics' if PT has that track format."""
-    if not stem_name or not stem_name.startswith("SFormat_"):
+    """'SFormat_1stOrderAmbisonics' -> 'TFormat_1stOrderAmbisonics' if PT has that track format.
+    Returns None for SFormat_None/unknown -- 'TFormat_None' is a sentinel, not a creatable track format."""
+    if not stem_name or not stem_name.startswith("SFormat_") or stem_name == "SFormat_None":
         return None
     cand = "TFormat_" + stem_name[len("SFormat_"):]
-    return cand if _has(pb.TrackFormat, cand) else None
+    return cand if (_has(pb.TrackFormat, cand) and cand != "TFormat_None") else None
 
 # channels per track format (for "does the file fit the selected track?")
 TRACK_CHANNELS = {
@@ -67,6 +68,14 @@ TRACK_CHANNELS = {
 AMBI_BY_CH = {4: "TFormat_1stOrderAmbisonics", 9: "TFormat_2ndOrderAmbisonics", 16: "TFormat_3rdOrderAmbisonics",
               25: "TFormat_4thOrderAmbisonics", 36: "TFormat_5thOrderAmbisonics", 49: "TFormat_6thOrderAmbisonics",
               64: "TFormat_7thOrderAmbisonics"}
+
+# channel count -> a standard, valid POLY track format, for files PT can't name
+# (stem=SFormat_None: a 6ch field rec, the CESSNA A1..A6, etc.). Exact-count formats,
+# so the "!= nch" guard in _do_poly passes and we place poly instead of spreading.
+CHAN_TO_TFORMAT = {1: "TFormat_Mono", 2: "TFormat_Stereo", 3: "TFormat_LCR", 4: "TFormat_Quad",
+                   5: "TFormat_5_0", 6: "TFormat_5_1", 7: "TFormat_7_0", 8: "TFormat_7_1",
+                   9: "TFormat_5_0_4", 10: "TFormat_7_1_2", 11: "TFormat_7_0_4", 12: "TFormat_7_1_4",
+                   13: "TFormat_7_0_6", 14: "TFormat_7_1_6", 15: "TFormat_9_0_6", 16: "TFormat_9_1_6"}
 
 
 class PtslError(Exception):
@@ -319,9 +328,18 @@ def _do_poly(c, clip_ids, cursor, selected, nch, stem, ambi, base):
         return [sel_name]
     else:
         if ambi:
-            tf = AMBI_BY_CH.get(nch) or stem_to_track_format(stem) or "TFormat_Stereo"
-        else:
-            tf = stem_to_track_format(stem) or AMBI_BY_CH.get(nch) or "TFormat_Stereo"
+            tf = AMBI_BY_CH.get(nch) or stem_to_track_format(stem)
+        else:                                    # not forced: never invent ambi here
+            tf = stem_to_track_format(stem)
+            if tf in set(AMBI_BY_CH.values()):   # but not ambi -- that's only select-the-track or force
+                tf = None
+        if not tf:
+            tf = CHAN_TO_TFORMAT.get(nch)
+        if not tf or TRACK_CHANNELS.get(tf, 0) != nch:
+            # unknown / unmappable multichannel layout (e.g. SFormat_None field rec):
+            # no valid poly track format exists -> split to mono lanes instead of erroring.
+            print("  no valid %dch poly format (stem=%s) -> spreading to mono lanes" % (nch, stem))
+            return _do_spread(c, clip_ids, cursor, selected, base)
         why = "no usable track selected" if not sel_ch else ("file %dch > track %dch (%s)" % (nch, sel_ch, sel_fmt))
         print("  %s -> creating new %s track at selection" % (why, tf))
         created = c.create_new_tracks(1, tf, name=base, after_track=sel_name)
